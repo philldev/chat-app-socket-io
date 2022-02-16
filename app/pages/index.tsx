@@ -1,31 +1,32 @@
 import { FC, useState } from 'react'
 
 const Home = () => {
-	const [selectedRoom, setSelectedRoom] = useState<string | null>(null)
+	const [selectedRoom, setSelectedRoom] = useState<ChatRoomModel | null>(null)
+	const [username, setUsername] = useState('')
 	return (
 		<div className='w-screen h-screen overflow-hidden text-sm text-white bg-black'>
 			<div className='flex flex-col h-full p-10'>
 				<div className='flex flex-col flex-1 w-full max-w-xl mx-auto overflow-hidden bg-black border border-gray-800 rounded-md shadow-xl'>
-					<div className='flex items-center p-4 border-b border-b-gray-800'>
+					<div className='flex items-center justify-between p-4 border-b border-b-gray-800'>
 						<div className='font-light'>Chat App</div>
-						<div className='flex items-center justify-end flex-1 space-x-2'>
-							<span className='block p-1 px-2 font-bold bg-yellow-900 rounded-md'>
-								Room : 1
-							</span>
-							<span className='block p-1 px-2 font-bold bg-blue-900 rounded-md'>
-								Name : John
-							</span>
-						</div>
+						<div className='font-bold text-blue-500'>{username}</div>
 					</div>
 					<div className='flex-1 overflow-y-auto'>
 						{!selectedRoom && (
 							<JoinRoom
+								username={username}
 								onRoomSelect={(room, username) => {
 									setSelectedRoom(room)
+									setUsername(username)
 								}}
 							/>
 						)}
-						{selectedRoom && <Room />}
+						{selectedRoom && (
+							<ChatRoom
+								room={selectedRoom}
+								onLeaveRoom={() => setSelectedRoom(null)}
+							/>
+						)}
 					</div>
 				</div>
 			</div>
@@ -33,14 +34,39 @@ const Home = () => {
 	)
 }
 
+type ChatRoomModel = {
+	name: string
+	id: string
+}
+
+const rooms: ChatRoomModel[] = [
+	{
+		name: 'Room 1 🏚',
+		id: 'room-1',
+	},
+	{
+		name: 'Room 2 🏚',
+		id: 'room-2',
+	},
+	{
+		name: 'Room 3 🏚',
+		id: 'room-3',
+	},
+]
+
 const JoinRoom: FC<{
-	onRoomSelect: (room: string, name: string) => void
+	onRoomSelect: (room: ChatRoomModel, name: string) => void
+	username?: string
+	room?: ChatRoomModel
 }> = (props) => {
-	const [room, setRoom] = useState('')
-	const [name, setName] = useState('')
-	const invalid = !room || !name
+	const [roomId, setRoomId] = useState(props.room?.id ?? '')
+	const [name, setName] = useState(props.username ?? '')
+	const invalid = !roomId || !name
 	const onJoinClick = () => {
-		props.onRoomSelect(room, name)
+		const selectedRoom = rooms.find((room) => room.id === roomId)
+		if (selectedRoom) {
+			props.onRoomSelect(selectedRoom, name)
+		}
 	}
 	return (
 		<div className='p-4'>
@@ -60,15 +86,18 @@ const JoinRoom: FC<{
 					<div className='space-y-2'>
 						<label htmlFor=''>Select Room</label>
 						<select
-							value={room}
+							value={roomId}
 							onChange={(e) => {
-								setRoom(e.target.value)
+								setRoomId(e.target.value)
 							}}
 							className='w-full h-10 px-2 bg-black border border-gray-800 rounded-md'
 						>
-							<option value={'room-1'}>Room 1</option>
-							<option value={'room-2'}>Room 2</option>
-							<option value={'room-3'}>Room 3</option>
+							<option value=''>Select Room</option>
+							{rooms.map((room) => (
+								<option key={room.id} value={room.id}>
+									{room.name}
+								</option>
+							))}
 						</select>
 					</div>
 				</div>
@@ -86,9 +115,21 @@ const JoinRoom: FC<{
 	)
 }
 
-const Room = () => {
+const ChatRoom: FC<{
+	onLeaveRoom: () => void
+	room: ChatRoomModel
+}> = (props) => {
 	return (
 		<div className='relative h-full'>
+			<div className='flex items-center justify-between flex-1 px-4 py-2 space-x-2 bg-gray-900'>
+				<span className='font-bold text-yellow-500'>{props.room.name}</span>
+				<button
+					onClick={props.onLeaveRoom}
+					className='flex items-center justify-center h-8 px-4 text-white bg-black border border-gray-800 rounded-md'
+				>
+					Leave Room
+				</button>
+			</div>
 			<Chats />
 			<MessageForm />
 		</div>
@@ -141,7 +182,7 @@ const MessageForm = () => {
 	}
 	return (
 		<div className='absolute inset-x-0 bottom-0 border-t border-gray-800'>
-			<form onSubmit={onMessageSubmit} className='flex w-full'>
+			<form onSubmit={onMessageSubmit} className='flex items-center w-full'>
 				<input
 					value={message}
 					onChange={(e) => {
