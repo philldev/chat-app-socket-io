@@ -1,4 +1,6 @@
-import { FC, useState } from 'react'
+import { FC, useEffect, useRef, useState } from 'react'
+import { io, Socket } from 'socket.io-client'
+const socket = io('ws://localhost:3001')
 
 const Home = () => {
 	const [selectedRoom, setSelectedRoom] = useState<ChatRoomModel | null>(null)
@@ -25,6 +27,7 @@ const Home = () => {
 							<ChatRoom
 								room={selectedRoom}
 								onLeaveRoom={() => setSelectedRoom(null)}
+								username={username}
 							/>
 						)}
 					</div>
@@ -115,13 +118,44 @@ const JoinRoom: FC<{
 	)
 }
 
+type MessageModel = {
+	username: string
+	message: string
+	id: string
+}
+
 const ChatRoom: FC<{
 	onLeaveRoom: () => void
 	room: ChatRoomModel
+	username: string
 }> = (props) => {
+	const [messages, setMessages] = useState<MessageModel[]>([])
+
+	useEffect(() => {
+		socket.connect()
+
+		socket.emit('join', {
+			username: props.username,
+			roomId: props.room.id,
+		})
+
+		socket.on(`join-${props.room.id}`, (data) => {
+			console.log(data)
+		})
+
+		socket.on(`message-${props.room.id}`, (data) => {
+			const message = data as MessageModel
+			setMessages((prev) => [...prev, message])
+		})
+
+		return () => {
+			socket.disconnect()
+		}
+	}, [props.username, props.room.id])
+
 	return (
-		<div className='relative h-full'>
-			<div className='flex items-center justify-between flex-1 px-4 py-2 space-x-2 bg-gray-900'>
+		<div className='relative flex flex-col h-full'>
+			<div className='flex items-center justify-between px-4 py-2 space-x-2 bg-gray-900'>
 				<span className='font-bold text-yellow-500'>{props.room.name}</span>
 				<button
 					onClick={props.onLeaveRoom}
@@ -130,8 +164,8 @@ const ChatRoom: FC<{
 					Leave Room
 				</button>
 			</div>
-			<Chats />
-			<MessageForm />
+			<Messages messages={messages} />
+			<MessageForm roomId={props.room.id} username={props.username} />
 		</div>
 	)
 }
@@ -160,12 +194,14 @@ const messages = [
 	},
 ]
 
-const Chats = () => {
+const Messages: FC<{
+	messages: MessageModel[]
+}> = (props) => {
 	return (
-		<div className='p-4 space-y-6'>
-			{messages.map((item) => (
+		<div className='flex-1 p-4 space-y-6 overflow-y-auto mb-[48px]'>
+			{props.messages.map((item) => (
 				<div key={item.id} className='space-y-2'>
-					<div className='text-xs font-bold'>{item.name}</div>
+					<div className='text-xs font-bold'>{item.username}</div>
 					<div className='p-2 bg-gray-900 rounded-md w-max'>{item.message}</div>
 				</div>
 			))}
@@ -173,15 +209,26 @@ const Chats = () => {
 	)
 }
 
-const MessageForm = () => {
+const MessageForm: FC<{
+	username: string
+	roomId: string
+}> = (props) => {
 	const [message, setMessage] = useState('')
 
 	const onMessageSubmit = (e: React.FormEvent<HTMLFormElement>) => {
 		e.preventDefault()
-		console.log(message)
+		if (message.length > 0) {
+			const data = {
+				username: props.username,
+				message,
+				roomId: props.roomId,
+			}
+			socket.emit('message', data)
+			setMessage('')
+		}
 	}
 	return (
-		<div className='absolute inset-x-0 bottom-0 border-t border-gray-800'>
+		<div className='absolute inset-x-0 bottom-0 z-10 bg-black border-t border-gray-800'>
 			<form onSubmit={onMessageSubmit} className='flex items-center w-full'>
 				<input
 					value={message}
