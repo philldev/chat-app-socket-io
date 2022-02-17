@@ -1,6 +1,10 @@
-import { FC, useEffect, useRef, useState } from 'react'
-import { io, Socket } from 'socket.io-client'
-const socket = io('ws://localhost:3001')
+import { FC, useEffect, useState } from 'react'
+import { io } from 'socket.io-client'
+
+const local = 'http://localhost:3000'
+const staging = 'https://chat-app-19902.herokuapp.com/'
+
+const socket = io(local)
 
 const Home = () => {
 	const [selectedRoom, setSelectedRoom] = useState<ChatRoomModel | null>(null)
