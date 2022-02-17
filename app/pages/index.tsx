@@ -1,41 +1,65 @@
+import { signIn, useSession } from 'next-auth/react'
 import { FC, useEffect, useState } from 'react'
 import { io } from 'socket.io-client'
 
-const local = 'http://localhost:3000'
+const local = 'http://localhost:3001'
 const staging = 'https://chat-app-19902.herokuapp.com/'
 
 const socket = io(local)
 
 const Home = () => {
 	const [selectedRoom, setSelectedRoom] = useState<ChatRoomModel | null>(null)
-	const [username, setUsername] = useState('')
+	const { status, data: session } = useSession()
 	return (
 		<div className='w-screen h-screen overflow-hidden text-sm text-white bg-black'>
 			<div className='flex flex-col h-full p-10'>
 				<div className='flex flex-col flex-1 w-full max-w-xl mx-auto overflow-hidden bg-black border border-gray-800 rounded-md shadow-xl'>
 					<div className='flex items-center justify-between p-4 border-b border-b-gray-800'>
 						<div className='font-light'>Chat App</div>
-						<div className='font-bold text-blue-500'>{username}</div>
+						<div className='font-bold text-blue-500'>{session?.user?.name}</div>
 					</div>
 					<div className='flex-1 overflow-y-auto'>
-						{!selectedRoom && (
-							<JoinRoom
-								username={username}
-								onRoomSelect={(room, username) => {
-									setSelectedRoom(room)
-									setUsername(username)
-								}}
-							/>
-						)}
-						{selectedRoom && (
-							<ChatRoom
-								room={selectedRoom}
-								onLeaveRoom={() => setSelectedRoom(null)}
-								username={username}
-							/>
+						{status === 'loading' && <div>Loading...</div>}
+						{status === 'unauthenticated' && <Login />}
+						{status === 'authenticated' && (
+							<>
+								{!selectedRoom && (
+									<JoinRoom
+										onRoomSelect={(room) => {
+											setSelectedRoom(room)
+										}}
+										username={session?.user?.name!}
+									/>
+								)}
+								{selectedRoom && (
+									<ChatRoom
+										room={selectedRoom}
+										onLeaveRoom={() => setSelectedRoom(null)}
+										username={session?.user?.name!}
+									/>
+								)}
+							</>
 						)}
 					</div>
 				</div>
+			</div>
+		</div>
+	)
+}
+
+const Login = () => {
+	return (
+		<div className='flex items-center justify-center h-full'>
+			<div className='flex flex-col items-center justify-center space-y-4'>
+				<p className='font-light text-gray-400'>
+					You are not logged in. Please login to continue.
+				</p>
+				<button
+					onClick={() => signIn('google')}
+					className='flex items-center justify-center h-8 px-4 font-bold bg-red-600 rounded-md'
+				>
+					Login With Google
+				</button>
 			</div>
 		</div>
 	)
@@ -62,17 +86,17 @@ const rooms: ChatRoomModel[] = [
 ]
 
 const JoinRoom: FC<{
-	onRoomSelect: (room: ChatRoomModel, name: string) => void
+	onRoomSelect: (room: ChatRoomModel) => void
 	username?: string
 	room?: ChatRoomModel
 }> = (props) => {
 	const [roomId, setRoomId] = useState(props.room?.id ?? '')
-	const [name, setName] = useState(props.username ?? '')
-	const invalid = !roomId || !name
+	// const [name, setName] = useState(props.username ?? '')
+	const invalid = !roomId
 	const onJoinClick = () => {
 		const selectedRoom = rooms.find((room) => room.id === roomId)
 		if (selectedRoom) {
-			props.onRoomSelect(selectedRoom, name)
+			props.onRoomSelect(selectedRoom)
 		}
 	}
 	return (
@@ -80,12 +104,10 @@ const JoinRoom: FC<{
 			<div className='space-y-10'>
 				<div className='space-y-4'>
 					<div className='space-y-2'>
-						<label htmlFor=''>Enter Name</label>
+						<label htmlFor=''>Name</label>
 						<input
-							value={name}
-							onChange={(e) => {
-								setName(e.target.value)
-							}}
+							defaultValue={props.username}
+							disabled
 							type='text'
 							className='w-full h-10 px-2 bg-black border border-gray-800 rounded-md'
 						/>
@@ -122,8 +144,8 @@ const JoinRoom: FC<{
 	)
 }
 
-type MessageModel = {
-	username: string
+interface MessageModel {
+	username?: string
 	message: string
 	id: string
 }
@@ -145,6 +167,9 @@ const ChatRoom: FC<{
 
 		socket.on(`join-${props.room.id}`, (data) => {
 			console.log(data)
+			const info = { message: data } as MessageModel
+			info.id = `${info.id}-${Math.random()}`
+			setMessages((prev) => [...prev, info])
 		})
 
 		socket.on(`message-${props.room.id}`, (data) => {
@@ -174,41 +199,26 @@ const ChatRoom: FC<{
 	)
 }
 
-// example messages
-const messages = [
-	{
-		id: 1,
-		name: 'John',
-		message: 'Hello',
-	},
-	{
-		id: 2,
-		name: 'Jane',
-		message: 'Hi',
-	},
-	{
-		id: 3,
-		name: 'John',
-		message: 'How are you?',
-	},
-	{
-		id: 4,
-		name: 'Jane',
-		message: 'I am fine',
-	},
-]
-
+function instanceOfMessageModel(object: any): object is MessageModel {
+	return 'username' in object
+}
 const Messages: FC<{
 	messages: MessageModel[]
 }> = (props) => {
 	return (
 		<div className='flex-1 p-4 space-y-6 overflow-y-auto mb-[48px]'>
-			{props.messages.map((item) => (
-				<div key={item.id} className='space-y-2'>
-					<div className='text-xs font-bold'>{item.username}</div>
-					<div className='p-2 bg-gray-900 rounded-md w-max'>{item.message}</div>
-				</div>
-			))}
+			{props.messages.map((item, index) =>
+				item.username ? (
+					<div key={index} className='space-y-2'>
+						<div className='text-xs font-bold'>{item.username}</div>
+						<div className='p-2 bg-gray-900 rounded-md w-max'>
+							{item.message}
+						</div>
+					</div>
+				) : (
+					<div key={index}>{item.message}</div>
+				)
+			)}
 		</div>
 	)
 }

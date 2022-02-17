@@ -23,6 +23,10 @@ const generateId = () => {
 io.on('connection', (socket) => {
 	console.log('a user connected')
 
+	socket.on('create-room', (id) => {
+		socket.join(id)
+	})
+
 	socket.on('join', (data) => {
 		console.log(data)
 		socket.broadcast.emit(
