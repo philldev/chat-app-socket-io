@@ -166,7 +166,6 @@ const ChatRoom: FC<{
 		})
 
 		socket.on(`join-${props.room.id}`, (data) => {
-			console.log(data)
 			const info = { message: data } as MessageModel
 			info.id = `${info.id}-${Math.random()}`
 			setMessages((prev) => [...prev, info])
