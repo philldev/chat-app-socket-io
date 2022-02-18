@@ -21,28 +21,18 @@ const generateId = () => {
 }
 
 io.on('connection', (socket) => {
-	console.log('a user connected')
-
-	socket.on('create-room', (id) => {
-		socket.join(id)
-	})
+	console.log('a user connected', socket.id)
 
 	socket.on('join', (data) => {
-		console.log(data)
-		socket.broadcast.emit(
-			`join-${data.roomId}`,
-			`${data.username} has joined the room`
-		)
+		const users = io.sockets.adapter.rooms.get(data.roomId)?.size
+		console.log(users)
+		socket.join(data.roomId)
+		io.to(data.roomId).emit(`join`, `${data.username} has joined the room`)
 	})
 
 	socket.on('message', (data) => {
 		console.log(data)
-		socket.emit(`message-${data.roomId}`, {
-			id: generateId(),
-			username: data.username,
-			message: data.message,
-		})
-		socket.broadcast.emit(`message-${data.roomId}`, {
+		io.to(data.roomId).emit(`message`, {
 			id: generateId(),
 			username: data.username,
 			message: data.message,

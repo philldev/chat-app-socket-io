@@ -1,49 +1,76 @@
 import { signIn, useSession } from 'next-auth/react'
-import { FC, useEffect, useState } from 'react'
-import { io } from 'socket.io-client'
+import { createContext, FC, useContext, useEffect, useState } from 'react'
+import { io, Socket } from 'socket.io-client'
 
 const local = 'http://localhost:3001'
 const staging = 'https://chat-app-19902.herokuapp.com/'
 
-const socket = io(local)
+const SocketContext = createContext<{ socket: Socket | null } | null>(null)
+
+const SocketProvider: FC = (props) => {
+	const [socket, setSocket] = useState<Socket | null>(null)
+	useEffect(() => {
+		const newSocket = io(local)
+		setSocket(newSocket)
+		return () => {
+			newSocket.disconnect()
+		}
+	}, [])
+	return (
+		<SocketContext.Provider value={{ socket }}>
+			{props.children}
+		</SocketContext.Provider>
+	)
+}
+const useSocket = () => {
+	const socket = useContext(SocketContext)
+	if (!socket) {
+		throw new Error('Socket not initialized')
+	}
+	return socket
+}
 
 const Home = () => {
 	const [selectedRoom, setSelectedRoom] = useState<ChatRoomModel | null>(null)
 	const { status, data: session } = useSession()
 	return (
-		<div className='w-screen h-screen overflow-hidden text-sm text-white bg-black'>
-			<div className='flex flex-col h-full p-10'>
-				<div className='flex flex-col flex-1 w-full max-w-xl mx-auto overflow-hidden bg-black border border-gray-800 rounded-md shadow-xl'>
-					<div className='flex items-center justify-between p-4 border-b border-b-gray-800'>
-						<div className='font-light'>Chat App</div>
-						<div className='font-bold text-blue-500'>{session?.user?.name}</div>
-					</div>
-					<div className='flex-1 overflow-y-auto'>
-						{status === 'loading' && <div>Loading...</div>}
-						{status === 'unauthenticated' && <Login />}
-						{status === 'authenticated' && (
-							<>
-								{!selectedRoom && (
-									<JoinRoom
-										onRoomSelect={(room) => {
-											setSelectedRoom(room)
-										}}
-										username={session?.user?.name!}
-									/>
-								)}
-								{selectedRoom && (
-									<ChatRoom
-										room={selectedRoom}
-										onLeaveRoom={() => setSelectedRoom(null)}
-										username={session?.user?.name!}
-									/>
-								)}
-							</>
-						)}
+		<SocketProvider>
+			<div className='w-screen h-screen overflow-hidden text-sm text-white bg-black'>
+				<div className='flex flex-col h-full p-10'>
+					<div className='flex flex-col flex-1 w-full max-w-xl mx-auto overflow-hidden bg-black border border-gray-800 rounded-md shadow-xl'>
+						<div className='flex items-center justify-between p-4 border-b border-b-gray-800'>
+							<div className='font-light'>Chat App</div>
+							<div className='font-bold text-blue-500'>
+								{session?.user?.name}
+							</div>
+						</div>
+						<div className='flex-1 overflow-y-auto'>
+							{status === 'loading' && <div>Loading...</div>}
+							{status === 'unauthenticated' && <Login />}
+							{status === 'authenticated' && (
+								<>
+									{!selectedRoom && (
+										<JoinRoom
+											onRoomSelect={(room) => {
+												setSelectedRoom(room)
+											}}
+											username={session?.user?.name!}
+										/>
+									)}
+									{selectedRoom && (
+										<ChatRoom
+											room={selectedRoom}
+											onLeaveRoom={() => setSelectedRoom(null)}
+											username={session?.user?.name!}
+										/>
+									)}
+								</>
+							)}
+						</div>
 					</div>
 				</div>
 			</div>
-		</div>
+		</SocketProvider>
 	)
 }
 
@@ -155,31 +182,29 @@ const ChatRoom: FC<{
 	room: ChatRoomModel
 	username: string
 }> = (props) => {
+	const { socket } = useSocket()
 	const [messages, setMessages] = useState<MessageModel[]>([])
 
 	useEffect(() => {
-		socket.connect()
+		if (socket) {
+			socket.emit('join', {
+				username: props.username,
+				roomId: props.room.id,
+			})
 
-		socket.emit('join', {
-			username: props.username,
-			roomId: props.room.id,
-		})
+			socket.on('join', (data) => {
+				const info = { message: data } as MessageModel
+				info.id = `${info.id}-${Math.random()}`
+				setMessages((prev) => [...prev, info])
+			})
 
-		socket.on(`join-${props.room.id}`, (data) => {
-			const info = { message: data } as MessageModel
-			info.id = `${info.id}-${Math.random()}`
-			setMessages((prev) => [...prev, info])
-		})
-
-		socket.on(`message-${props.room.id}`, (data) => {
-			const message = data as MessageModel
-			setMessages((prev) => [...prev, message])
-		})
-
-		return () => {
-			socket.disconnect()
+			socket.on('message', (data) => {
+				console.log(data)
+				const message = data as MessageModel
+				setMessages((prev) => [...prev, message])
+			})
 		}
-	}, [props.username, props.room.id])
+	}, [props.username, props.room.id, socket])
 
 	return (
 		<div className='relative flex flex-col h-full'>
@@ -198,24 +223,27 @@ const ChatRoom: FC<{
 	)
 }
 
-function instanceOfMessageModel(object: any): object is MessageModel {
-	return 'username' in object
-}
 const Messages: FC<{
 	messages: MessageModel[]
 }> = (props) => {
 	return (
-		<div className='flex-1 p-4 space-y-6 overflow-y-auto mb-[48px]'>
+		<div className='flex-1 p-4 space-y-4 overflow-y-auto mb-[48px]'>
 			{props.messages.map((item, index) =>
-				item.username ? (
+				!item.username ? (
+					<div key={index}>{item.message}</div>
+				) : props.messages[index - 1]?.username === item.username ? (
+					<div key={index} className='mt-[0 !important] space-y-2'>
+						<div className='p-2 bg-gray-900 rounded-md w-max'>
+							{item.message}
+						</div>
+					</div>
+				) : (
 					<div key={index} className='space-y-2'>
 						<div className='text-xs font-bold'>{item.username}</div>
 						<div className='p-2 bg-gray-900 rounded-md w-max'>
 							{item.message}
 						</div>
 					</div>
-				) : (
-					<div key={index}>{item.message}</div>
 				)
 			)}
 		</div>
@@ -227,6 +255,7 @@ const MessageForm: FC<{
 	roomId: string
 }> = (props) => {
 	const [message, setMessage] = useState('')
+	const { socket } = useSocket()
 
 	const onMessageSubmit = (e: React.FormEvent<HTMLFormElement>) => {
 		e.preventDefault()
@@ -236,7 +265,7 @@ const MessageForm: FC<{
 				message,
 				roomId: props.roomId,
 			}
-			socket.emit('message', data)
+			socket?.emit('message', data)
 			setMessage('')
 		}
 	}
